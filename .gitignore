@@ -1,0 +1,85 @@
+# Hey Spider Robot - Git Ignore File
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.pyc
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.pydevproject
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Images
+images/raw/
+images/detections/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# Models
+models/
+*.pt
+yolo*.pt
+
+# Data
+data/
+*.csv
+*.json
+*.pkl
+
+# Temporary files
+tmp/
+temp/
+.tmp
+*.tmp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+*.pid
+
+# Backups
+*.bak
+*.backup
+*.orig
+
+# IDE settings (keep structure, ignore content)
+.vscode/*
+!.vscode/settings.json.example
+.idea/*
+!.idea/project.iml

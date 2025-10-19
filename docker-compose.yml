@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  hey-spider-robot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hey-spider-robot
+    ports:
+      - "5000:5000"  # Web interface
+    volumes:
+      - ./logs:/app/logs
+      - ./images:/app/images
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MOCK_HARDWARE=true  # Set to false for actual hardware
+      - DEBUG_MODE=false
+      - LOG_LEVEL=INFO
+      # Add your OpenAI API key here:
+      # - OPENAI_API_KEY=sk-your-key-here
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+networks:
+  default:
+    name: spider-network
