@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# ============================================
+# Create .gitkeep Files for Empty Directories
+# This ensures Git tracks empty directories
+# ============================================
+
+echo "🕷️  Hey Spider Robot - Creating .gitkeep files"
+echo "==============================================="
+
+# Create directories and .gitkeep files
+directories=(
+    "images/raw"
+    "images/detections"
+    "images/night_vision"
+    "logs"
+    "data"
+    "models"
+)
+
+for dir in "${directories[@]}"; do
+    echo -n "Creating $dir/.gitkeep ... "
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$dir"
+    
+    # Create .gitkeep file
+    touch "$dir/.gitkeep"
+    
+    echo "✓"
+done
+
+echo ""
+echo "✅ All .gitkeep files created successfully!"
+echo ""
+echo "📂 Directory structure:"
+tree -a -L 2 -I 'venv|__pycache__|*.pyc|.git' .

@@ -1,14 +1,25 @@
-# ============================================
-# src/utils.py - CHANGE #6: Enhanced Logging Configuration
-# Priority: 🟡 IMPORTANT
-# Replace the existing setup_logging function (around line 13)
-# ============================================
+"""
+Utility Functions for Hey Spider Robot
+Logging, performance tracking, and helper functions
+"""
 
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
+
+
+def timestamp() -> str:
+    """
+    Generate timestamp string for filenames
+    
+    Returns:
+        Timestamp in format: YYYYMMDD_HHMMSS
+    """
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def setup_logging(log_file: str = "logs/spider.log", 
@@ -40,9 +51,7 @@ def setup_logging(log_file: str = "logs/spider.log",
     # Clear any existing handlers
     logger.handlers.clear()
     
-    # ============================================
     # File Handler with Rotation
-    # ============================================
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=max_bytes,
@@ -60,12 +69,10 @@ def setup_logging(log_file: str = "logs/spider.log",
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
     
-    # ============================================
     # Console Handler (if enabled)
-    # ============================================
     if console_output:
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)  # Console shows INFO and above
+        console_handler.setLevel(logging.INFO)
         
         # Simpler format for console
         console_formatter = logging.Formatter(
@@ -75,9 +82,7 @@ def setup_logging(log_file: str = "logs/spider.log",
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
     
-    # ============================================
     # Error File Handler (separate file for errors)
-    # ============================================
     error_log_file = log_path.parent / f"{log_path.stem}_errors.log"
     error_handler = RotatingFileHandler(
         error_log_file,
@@ -89,9 +94,7 @@ def setup_logging(log_file: str = "logs/spider.log",
     error_handler.setFormatter(file_formatter)
     logger.addHandler(error_handler)
     
-    # ============================================
     # Initial Log Entry
-    # ============================================
     logger.info("=" * 80)
     logger.info("🕷️  HEY SPIDER ROBOT - Logging Initialized")
     logger.info("=" * 80)
@@ -106,14 +109,10 @@ def setup_logging(log_file: str = "logs/spider.log",
     return logger
 
 
-# ============================================
-# Additional Logging Utilities
-# ============================================
-
 class PerformanceLogger:
     """Context manager for logging performance metrics"""
     
-    def __init__(self, operation_name: str, logger: logging.Logger = None):
+    def __init__(self, operation_name: str, logger: Optional[logging.Logger] = None):
         self.operation_name = operation_name
         self.logger = logger or logging.getLogger('HeySpiderRobot')
         self.start_time = None
@@ -128,19 +127,17 @@ class PerformanceLogger:
         
         if exc_type is None:
             self.logger.debug(
-                f"Completed: {self.operation_name} "
-                f"in {duration:.3f}s"
+                f"Completed: {self.operation_name} in {duration:.3f}s"
             )
         else:
             self.logger.error(
-                f"Failed: {self.operation_name} "
-                f"after {duration:.3f}s - {exc_val}"
+                f"Failed: {self.operation_name} after {duration:.3f}s - {exc_val}"
             )
         
         return False  # Don't suppress exceptions
 
 
-def log_function_call(logger: logging.Logger = None):
+def log_function_call(logger: Optional[logging.Logger] = None):
     """Decorator to log function calls"""
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -171,29 +168,107 @@ def log_exception(logger: logging.Logger, exc: Exception, context: str = ""):
     logger.error(traceback.format_exc())
 
 
-# Example usage in main.py:
-"""
-from src.utils import setup_logging, PerformanceLogger, log_exception
+def ensure_directory(path: str) -> Path:
+    """
+    Ensure directory exists, create if not
+    
+    Args:
+        path: Directory path
+        
+    Returns:
+        Path object
+    """
+    dir_path = Path(path)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
 
-def main():
-    # Setup logging first
-    logger = setup_logging(
-        log_file=settings.get_log_path(),
-        level=settings.LOG_LEVEL,
-        console_output=True
-    )
+
+def format_duration(seconds: float) -> str:
+    """
+    Format duration in human-readable format
     
-    logger.info("Starting Hey Spider Robot...")
+    Args:
+        seconds: Duration in seconds
+        
+    Returns:
+        Formatted string (e.g., "1h 23m 45s")
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
     
-    try:
-        # Use performance logging
-        with PerformanceLogger("Robot Initialization", logger):
-            robot = HeySpiderRobot()
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs}s"
+    else:
+        return f"{secs}s"
+
+
+def format_size(bytes_size: int) -> str:
+    """
+    Format file size in human-readable format
+    
+    Args:
+        bytes_size: Size in bytes
         
-        # Start robot
-        robot.start()
+    Returns:
+        Formatted string (e.g., "1.5 MB")
+    """
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes_size < 1024.0:
+            return f"{bytes_size:.1f} {unit}"
+        bytes_size /= 1024.0
+    return f"{bytes_size:.1f} PB"
+
+
+def clamp(value: float, min_val: float, max_val: float) -> float:
+    """
+    Clamp value between min and max
+    
+    Args:
+        value: Value to clamp
+        min_val: Minimum value
+        max_val: Maximum value
         
-    except Exception as e:
-        log_exception(logger, e, "Main robot startup")
-        sys.exit(1)
-"""
+    Returns:
+        Clamped value
+    """
+    return max(min_val, min(max_val, value))
+
+
+def map_range(value: float, 
+              in_min: float, in_max: float,
+              out_min: float, out_max: float) -> float:
+    """
+    Map value from one range to another
+    
+    Args:
+        value: Input value
+        in_min: Input range minimum
+        in_max: Input range maximum
+        out_min: Output range minimum
+        out_max: Output range maximum
+        
+    Returns:
+        Mapped value
+    """
+    return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+
+# Example usage
+if __name__ == "__main__":
+    # Test logging
+    logger = setup_logging("logs/test.log", level="DEBUG")
+    logger.info("Testing logging system")
+    
+    # Test performance logger
+    with PerformanceLogger("Test Operation", logger):
+        time.sleep(0.5)
+    
+    # Test utilities
+    print(f"Timestamp: {timestamp()}")
+    print(f"Duration: {format_duration(3665)}")
+    print(f"Size: {format_size(1536000)}")
+    print(f"Clamp: {clamp(150, 0, 100)}")
+    print(f"Map: {map_range(50, 0, 100, 0, 180)}")

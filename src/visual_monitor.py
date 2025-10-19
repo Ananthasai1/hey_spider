@@ -2,7 +2,7 @@
 Standard Visual Monitor - YOLO v8 Object Detection
 Lightweight version for systems without advanced camera features
 """
-
+from src.utils import timestamp
 import threading
 import time
 import os
