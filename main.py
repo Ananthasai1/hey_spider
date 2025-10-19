@@ -11,6 +11,7 @@ Features:
 - Beautiful web dashboard
 - OLED status display
 - Comprehensive error handling
+- Graceful shutdown management
 """
 
 import sys
@@ -19,6 +20,7 @@ import signal
 import json
 import traceback
 import os
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -59,8 +61,12 @@ class HeySpiderRobot:
         self.web = None
         self.running = False
         
+        # Shutdown management
+        self.shutdown_requested = False
+        self.shutdown_in_progress = False
+        self.start_time = time.time()
+        
         # Statistics
-        self.start_time = datetime.now()
         self.stats = {
             'commands_processed': 0,
             'photos_captured': 0,
@@ -350,6 +356,171 @@ class HeySpiderRobot:
         """Speak response (placeholder for TTS)"""
         print(f"     💬 Response: {text}")
         
+    def signal_handler(self, signum, frame):
+        """
+        Handle system signals gracefully
+        Supports SIGINT (Ctrl+C) and SIGTERM
+        """
+        signal_names = {
+            signal.SIGINT: "SIGINT (Ctrl+C)",
+            signal.SIGTERM: "SIGTERM"
+        }
+        signal_name = signal_names.get(signum, f"Signal {signum}")
+        
+        # First interrupt - initiate graceful shutdown
+        if not self.shutdown_requested:
+            self.shutdown_requested = True
+            print(f"\n{'='*60}")
+            print(f"🛑 Received {signal_name} - Initiating graceful shutdown...")
+            print(f"{'='*60}")
+            print("⏱️  Stopping all systems safely...")
+            print("⚠️  Press Ctrl+C again to force quit (not recommended)")
+            print(f"{'='*60}\n")
+            
+            # Start shutdown in background thread
+            shutdown_thread = threading.Thread(
+                target=self._graceful_shutdown,
+                daemon=False,
+                name="ShutdownThread"
+            )
+            shutdown_thread.start()
+            
+            # Wait for graceful shutdown with timeout
+            shutdown_thread.join(timeout=15)
+            
+            if shutdown_thread.is_alive():
+                print("\n⚠️  Graceful shutdown timeout exceeded")
+                print("   Forcing shutdown...")
+                self._force_shutdown()
+            
+            print("\n✅ Shutdown complete")
+            sys.exit(0)
+        
+        # Second interrupt - force shutdown
+        elif not self.shutdown_in_progress:
+            print(f"\n{'='*60}")
+            print("⚠️  FORCE SHUTDOWN REQUESTED!")
+            print(f"{'='*60}")
+            self._force_shutdown()
+            sys.exit(1)
+        
+        # Third interrupt - immediate exit
+        else:
+            print("\n💥 IMMEDIATE EXIT!")
+            os._exit(1)
+    
+    def _graceful_shutdown(self):
+        """Execute graceful shutdown sequence"""
+        try:
+            self.shutdown_in_progress = True
+            
+            # Update OLED
+            if self.oled:
+                try:
+                    self.oled.update_mode("SHUTDOWN")
+                    self.oled.show_message("Shutting", "Down", "Please Wait")
+                except:
+                    pass
+            
+            # Stop subsystems in order
+            shutdown_sequence = [
+                ("Voice Activation", self.voice, 'stop_listening', 2),
+                ("AI Thinking", self.ai, 'stop_thinking', 2),
+                ("Visual Monitoring", self.vision, 'stop_monitoring', 3),
+                ("OLED Display", self.oled, 'stop', 1),
+                ("Spider Controller", self.spider, 'cleanup', 2),
+            ]
+            
+            for name, system, method, timeout in shutdown_sequence:
+                if system:
+                    try:
+                        print(f"   🔄 Stopping {name}...", end=' ', flush=True)
+                        
+                        # Call stop method with timeout
+                        stop_thread = threading.Thread(
+                            target=lambda: getattr(system, method)()
+                        )
+                        stop_thread.start()
+                        stop_thread.join(timeout=timeout)
+                        
+                        if stop_thread.is_alive():
+                            print("⏱️  Timeout")
+                        else:
+                            print("✅")
+                            
+                    except Exception as e:
+                        print(f"❌ Error: {e}")
+                        
+                    time.sleep(0.2)  # Brief pause between stops
+            
+            # Cleanup camera
+            if self.vision:
+                try:
+                    print(f"   🔄 Cleaning up camera...", end=' ', flush=True)
+                    self.vision.cleanup()
+                    print("✅")
+                except Exception as e:
+                    print(f"❌ Error: {e}")
+            
+            # Final statistics
+            self._print_shutdown_stats()
+            
+            self.shutdown_in_progress = False
+            
+        except Exception as e:
+            print(f"\n❌ Error during graceful shutdown: {e}")
+            traceback.print_exc()
+    
+    def _force_shutdown(self):
+        """Force immediate shutdown (emergency only)"""
+        print("\n⚠️  Executing force shutdown...")
+        
+        # Try to stop critical systems quickly
+        try:
+            if self.spider:
+                self.spider.stop()
+        except:
+            pass
+        
+        try:
+            if self.vision:
+                self.vision.cleanup()
+        except:
+            pass
+        
+        # Cleanup GPIO
+        try:
+            import RPi.GPIO as GPIO
+            GPIO.cleanup()
+        except:
+            pass
+        
+        print("✅ Force shutdown complete")
+    
+    def _print_shutdown_stats(self):
+        """Print session statistics on shutdown"""
+        runtime = time.time() - self.start_time
+        
+        print(f"\n{'='*60}")
+        print("📊 SESSION STATISTICS")
+        print(f"{'='*60}")
+        print(f"⏱️  Runtime: {runtime:.1f} seconds ({runtime/60:.1f} minutes)")
+        print(f"📝 Commands Processed: {self.stats.get('commands_processed', 0)}")
+        print(f"📸 Photos Captured: {self.stats.get('photos_captured', 0)}")
+        print(f"👁️  Detections Made: {self.stats.get('detections_made', 0)}")
+        print(f"❌ Errors: {self.stats.get('errors', 0)}")
+        
+        # Vision stats
+        if self.vision:
+            try:
+                vstats = self.vision.get_detection_stats()
+                print(f"🎥 Average FPS: {vstats.get('fps', 0):.1f}")
+                print(f"🎯 Detection Time: {vstats.get('avg_detection_time', 0)*1000:.1f}ms")
+            except:
+                pass
+        
+        print(f"{'='*60}")
+        
     def start(self):
         """Start all robot systems"""
         print("\n" + "=" * 63)
@@ -409,90 +580,48 @@ class HeySpiderRobot:
             try:
                 self.web.run(host='0.0.0.0', port=settings.WEB_PORT, debug=False)
             except KeyboardInterrupt:
-                self.stop()
+                pass  # Signal handler will manage shutdown
             except Exception as e:
                 print(f"❌ Web interface error: {e}")
                 traceback.print_exc()
-                self.stop()
         else:
             print("❌ No web interface available")
             try:
                 while self.running:
                     time.sleep(1)
             except KeyboardInterrupt:
-                self.stop()
-                
-    def stop(self):
-        """Stop all robot systems gracefully"""
-        print("\n" + "=" * 63)
-        print("🛑 STOPPING HEY SPIDER ROBOT")
-        print("=" * 63)
-        
-        self.running = False
-        
-        if self.oled:
-            self.oled.update_mode("SHUTDOWN")
-            
-        # Stop subsystems
-        subsystems = [
-            ("Voice", self.voice, 'stop_listening'),
-            ("Vision", self.vision, 'stop_monitoring'),
-            ("AI", self.ai, 'stop_thinking'),
-            ("OLED", self.oled, 'stop')
-        ]
-        
-        for name, system, method in subsystems:
-            if system:
-                try:
-                    print(f"  Stopping {name}...")
-                    getattr(system, method)()
-                except Exception as e:
-                    print(f"  ❌ {name} shutdown error: {e}")
-                    
-        # Cleanup hardware
-        if self.spider:
-            try:
-                print("  Cleaning up hardware...")
-                self.spider.cleanup()
-            except Exception as e:
-                print(f"  ❌ Hardware cleanup error: {e}")
-                
-        if self.vision:
-            try:
-                self.vision.cleanup()
-            except Exception as e:
-                print(f"  ❌ Vision cleanup error: {e}")
-                
-        # Print statistics
-        runtime = (datetime.now() - self.start_time).total_seconds()
-        print("\n" + "=" * 63)
-        print("📊 SESSION STATISTICS")
-        print("=" * 63)
-        print(f"  Runtime: {runtime:.1f} seconds")
-        print(f"  Commands Processed: {self.stats['commands_processed']}")
-        print(f"  Photos Captured: {self.stats['photos_captured']}")
-        print(f"  Errors: {self.stats['errors']}")
-        print("=" * 63)
-        print("✅ Hey Spider Robot stopped safely")
-        print("=" * 63)
-        
-    def signal_handler(self, signum, frame):
-        """Handle system signals"""
-        print(f"\n🛑 Received signal {signum}")
-        self.stop()
-        sys.exit(0)
+                pass  # Signal handler will manage shutdown
 
 
 def main():
     """Main entry point with comprehensive error handling"""
+    
+    # Setup logging first
+    try:
+        from src.utils import setup_logging, log_exception
+        
+        logger = setup_logging(
+            log_file=settings.get_log_path(),
+            level=settings.LOG_LEVEL
+        )
+        
+        logger.info("=" * 80)
+        logger.info("🕷️ HEY SPIDER ROBOT v2.0 - Starting...")
+        logger.info("=" * 80)
+    except:
+        logger = None
+        print("⚠️  Logging not available")
+    
     print("🕷️ HEY SPIDER ROBOT v2.0 - Starting...")
     
     try:
         # Check Python version
         if sys.version_info < (3, 7):
+            if logger:
+                logger.error("Python 3.7+ required")
             print("❌ Python 3.7+ required")
             sys.exit(1)
-            
+        
         # Check virtual environment
         in_venv = hasattr(sys, 'real_prefix') or (
             hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
@@ -502,30 +631,51 @@ def main():
             print("✅ Running in virtual environment")
         else:
             print("⚠️  Not in virtual environment (recommended)")
-            
+        
         # Create necessary directories
         directories = ['images', 'images/raw', 'images/detections', 
                       'images/night_vision', 'logs', 'data', 'models']
         for directory in directories:
             Path(directory).mkdir(parents=True, exist_ok=True)
-            
+        
         # Initialize robot
+        if logger:
+            logger.info("Initializing robot...")
         robot = HeySpiderRobot()
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, robot.signal_handler)
         signal.signal(signal.SIGTERM, robot.signal_handler)
         
+        # Log successful initialization
+        if logger:
+            logger.info("Robot initialized successfully")
+            logger.info(f"Spider: {'OK' if robot.spider else 'N/A'}")
+            logger.info(f"Vision: {'OK' if robot.vision else 'N/A'}")
+            logger.info(f"AI: {'OK' if robot.ai else 'N/A'}")
+            logger.info(f"Web: {'OK' if robot.web else 'N/A'}")
+        
         # Start the robot
+        if logger:
+            logger.info("Starting robot systems...")
         robot.start()
         
     except KeyboardInterrupt:
+        if logger:
+            logger.info("Keyboard interrupt received")
         print("\n🛑 Keyboard interrupt received")
     except ImportError as e:
+        if logger:
+            logger.error(f"Import error: {e}")
         print(f"❌ Import error: {e}")
         print("💡 Install dependencies: pip install -r requirements.txt")
         sys.exit(1)
     except Exception as e:
+        if logger:
+            try:
+                log_exception(logger, e, "Fatal error in main()")
+            except:
+                pass
         print(f"❌ Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)

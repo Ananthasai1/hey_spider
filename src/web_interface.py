@@ -56,6 +56,7 @@ class WebInterface:
         self.running = False
         self.update_thread = None
         self.connected_clients = 0
+        self.start_time = time.time()
         
         # Performance tracking
         self.last_frame_time = time.time()
@@ -77,7 +78,7 @@ class WebInterface:
         
         @self.app.route('/health')
         def health():
-            """Health check endpoint"""
+            """Basic health check endpoint"""
             return jsonify({
                 'status': 'ok',
                 'timestamp': datetime.now().isoformat(),
@@ -89,6 +90,219 @@ class WebInterface:
                 },
                 'clients': self.connected_clients
             })
+        
+        @self.app.route('/api/health/detailed')
+        def detailed_health():
+            """Comprehensive health check with component status"""
+            health = {
+                'status': 'healthy',
+                'timestamp': datetime.now().isoformat(),
+                'uptime': time.time() - self.start_time,
+                'version': '2.0.0',
+                'components': {},
+                'metrics': {},
+                'alerts': []
+            }
+            
+            # ============================================
+            # Spider Controller Health
+            # ============================================
+            if self.spider:
+                try:
+                    distance = self.spider.get_distance()
+                    health['components']['spider'] = {
+                        'status': 'ok',
+                        'mode': self.spider.current_mode,
+                        'is_moving': self.spider.is_moving,
+                        'distance': round(distance, 2),
+                        'servo_available': True
+                    }
+                    
+                    # Alert if obstacle too close
+                    if distance < 10 and distance > 0:
+                        health['alerts'].append({
+                            'level': 'warning',
+                            'component': 'spider',
+                            'message': f'Obstacle detected at {distance:.1f}cm'
+                        })
+                        
+                except Exception as e:
+                    health['components']['spider'] = {
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                    health['status'] = 'degraded'
+                    health['alerts'].append({
+                        'level': 'error',
+                        'component': 'spider',
+                        'message': f'Spider controller error: {str(e)}'
+                    })
+            else:
+                health['components']['spider'] = {'status': 'unavailable'}
+                health['status'] = 'degraded'
+            
+            # ============================================
+            # Vision System Health
+            # ============================================
+            if self.vision:
+                try:
+                    stats = self.vision.get_detection_stats()
+                    health['components']['vision'] = {
+                        'status': 'ok' if stats.get('camera_active') else 'degraded',
+                        'camera_type': self.vision.get_camera_type() if hasattr(self.vision, 'get_camera_type') else 'unknown',
+                        'fps': stats.get('fps', 0),
+                        'current_objects': stats.get('current_objects', 0),
+                        'model_loaded': stats.get('model_loaded', False),
+                        'avg_detection_time': round(stats.get('avg_detection_time', 0) * 1000, 2)  # ms
+                    }
+                    
+                    # FPS alert
+                    if stats.get('fps', 0) < 5 and stats.get('camera_active', False):
+                        health['alerts'].append({
+                            'level': 'warning',
+                            'component': 'vision',
+                            'message': f"Low FPS: {stats.get('fps', 0):.1f}"
+                        })
+                    
+                    # Camera alert
+                    if not stats.get('camera_active'):
+                        health['alerts'].append({
+                            'level': 'error',
+                            'component': 'vision',
+                            'message': 'Camera inactive or failed'
+                        })
+                        health['status'] = 'degraded'
+                        
+                except Exception as e:
+                    health['components']['vision'] = {
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                    health['status'] = 'degraded'
+                    health['alerts'].append({
+                        'level': 'error',
+                        'component': 'vision',
+                        'message': f'Vision system error: {str(e)}'
+                    })
+            else:
+                health['components']['vision'] = {'status': 'unavailable'}
+                health['status'] = 'degraded'
+            
+            # ============================================
+            # AI System Health
+            # ============================================
+            if self.ai:
+                if self.ai.client:
+                    health['components']['ai'] = {
+                        'status': 'ok',
+                        'model': self.ai.model if hasattr(self.ai, 'model') else 'unknown',
+                        'thoughts_count': len(self.ai.thoughts_history) if hasattr(self.ai, 'thoughts_history') else 0,
+                        'current_emotion': self.ai.emotional_state if hasattr(self.ai, 'emotional_state') else 'unknown'
+                    }
+                else:
+                    health['components']['ai'] = {
+                        'status': 'degraded',
+                        'reason': 'No API key configured'
+                    }
+                    health['alerts'].append({
+                        'level': 'warning',
+                        'component': 'ai',
+                        'message': 'AI running in offline mode'
+                    })
+            else:
+                health['components']['ai'] = {'status': 'unavailable'}
+            
+            # ============================================
+            # OLED Display Health
+            # ============================================
+            if self.oled:
+                if self.oled.display:
+                    health['components']['oled'] = {
+                        'status': 'ok',
+                        'mode': self.oled.mode if hasattr(self.oled, 'mode') else 'unknown',
+                        'running': self.oled.running if hasattr(self.oled, 'running') else False
+                    }
+                else:
+                    health['components']['oled'] = {'status': 'mock'}
+            else:
+                health['components']['oled'] = {'status': 'unavailable'}
+            
+            # ============================================
+            # System Metrics
+            # ============================================
+            try:
+                import psutil
+                
+                # CPU usage
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                health['metrics']['cpu_percent'] = round(cpu_percent, 1)
+                
+                if cpu_percent > 80:
+                    health['alerts'].append({
+                        'level': 'warning',
+                        'component': 'system',
+                        'message': f'High CPU usage: {cpu_percent:.1f}%'
+                    })
+                
+                # Memory usage
+                memory = psutil.virtual_memory()
+                health['metrics']['memory'] = {
+                    'percent': round(memory.percent, 1),
+                    'available_mb': round(memory.available / 1024 / 1024, 1),
+                    'total_mb': round(memory.total / 1024 / 1024, 1)
+                }
+                
+                if memory.percent > 85:
+                    health['alerts'].append({
+                        'level': 'warning',
+                        'component': 'system',
+                        'message': f'High memory usage: {memory.percent:.1f}%'
+                    })
+                
+                # Temperature (Raspberry Pi specific)
+                try:
+                    with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                        temp = float(f.read()) / 1000.0
+                        health['metrics']['temperature_c'] = round(temp, 1)
+                        
+                        if temp > 80:
+                            health['alerts'].append({
+                                'level': 'critical',
+                                'component': 'system',
+                                'message': f'Critical temperature: {temp:.1f}°C'
+                            })
+                            health['status'] = 'critical'
+                        elif temp > 70:
+                            health['alerts'].append({
+                                'level': 'warning',
+                                'component': 'system',
+                                'message': f'High temperature: {temp:.1f}°C'
+                            })
+                except:
+                    pass  # Not on Raspberry Pi
+                    
+            except ImportError:
+                health['metrics']['note'] = 'psutil not available for system metrics'
+            
+            # ============================================
+            # Connected Clients
+            # ============================================
+            health['metrics']['connected_clients'] = self.connected_clients
+            
+            # ============================================
+            # Overall Status Determination
+            # ============================================
+            critical_alerts = [a for a in health['alerts'] if a['level'] == 'critical']
+            error_alerts = [a for a in health['alerts'] if a['level'] == 'error']
+            
+            if critical_alerts:
+                health['status'] = 'critical'
+            elif error_alerts:
+                health['status'] = 'unhealthy'
+            elif health['alerts']:
+                health['status'] = 'degraded'
+            
+            return jsonify(health)
         
         @self.app.route('/api/status')
         def api_status():

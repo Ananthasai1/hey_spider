@@ -1,198 +1,199 @@
-"""
-Utility Functions
-Helper functions for logging, timing, and data processing
-"""
+# ============================================
+# src/utils.py - CHANGE #6: Enhanced Logging Configuration
+# Priority: 🟡 IMPORTANT
+# Replace the existing setup_logging function (around line 13)
+# ============================================
 
-import os
-import json
 import logging
-import time
-from datetime import datetime
+from logging.handlers import RotatingFileHandler
+import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from datetime import datetime
 
 
-def timestamp(fmt: str = "%Y%m%d_%H%M%S") -> str:
-    """Get formatted timestamp"""
-    return datetime.now().strftime(fmt)
-
-
-def setup_logging(log_file: str = "logs/spider.log", level: str = "INFO"):
-    """Setup logging configuration"""
+def setup_logging(log_file: str = "logs/spider.log", 
+                  level: str = "INFO",
+                  max_bytes: int = 10485760,  # 10MB
+                  backup_count: int = 5,
+                  console_output: bool = True) -> logging.Logger:
+    """
+    Setup comprehensive logging configuration with rotation
+    
+    Args:
+        log_file: Path to log file
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        max_bytes: Maximum size of log file before rotation
+        backup_count: Number of backup files to keep
+        console_output: Whether to output to console
+    
+    Returns:
+        Configured logger instance
+    """
     # Create log directory
-    log_dir = Path(log_file).parent
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Configure logging
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+    # Create logger
+    logger = logging.getLogger('HeySpiderRobot')
+    logger.setLevel(getattr(logging, level.upper()))
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # ============================================
+    # File Handler with Rotation
+    # ============================================
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding='utf-8'
     )
+    file_handler.setLevel(getattr(logging, level.upper()))
     
-    return logging.getLogger(__name__)
-
-
-def save_json(data: Any, filepath: str) -> bool:
-    """Save data to JSON file"""
-    try:
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
-        return True
-    except Exception as e:
-        print(f"Error saving JSON: {e}")
-        return False
-
-
-def load_json(filepath: str) -> Dict:
-    """Load data from JSON file"""
-    try:
-        with open(filepath, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading JSON: {e}")
-        return {}
-
-
-def frame_to_base64(frame) -> str:
-    """Convert image frame to base64 string"""
-    try:
-        import cv2
-        import base64
+    # Detailed format for file
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(name)s | %(levelname)-8s | '
+        '%(filename)s:%(lineno)d | %(funcName)s() | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # ============================================
+    # Console Handler (if enabled)
+    # ============================================
+    if console_output:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)  # Console shows INFO and above
         
-        _, buffer = cv2.imencode('.jpg', frame)
-        frame_base64 = base64.b64encode(buffer).decode()
-        return frame_base64
-    except Exception as e:
-        print(f"Frame encoding error: {e}")
-        return ""
-
-
-def get_file_size(filepath: str) -> str:
-    """Get human-readable file size"""
-    try:
-        size = os.path.getsize(filepath)
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
-    except:
-        return "Unknown"
-
-
-def get_system_info() -> Dict:
-    """Get system information"""
-    import platform
-    import sys
+        # Simpler format for console
+        console_formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
     
-    try:
-        import psutil
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-    except ImportError:
-        cpu_percent = 0
-        memory = None
+    # ============================================
+    # Error File Handler (separate file for errors)
+    # ============================================
+    error_log_file = log_path.parent / f"{log_path.stem}_errors.log"
+    error_handler = RotatingFileHandler(
+        error_log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding='utf-8'
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(file_formatter)
+    logger.addHandler(error_handler)
     
-    info = {
-        'platform': platform.platform(),
-        'python_version': sys.version,
-        'cpu_percent': cpu_percent,
-    }
+    # ============================================
+    # Initial Log Entry
+    # ============================================
+    logger.info("=" * 80)
+    logger.info("🕷️  HEY SPIDER ROBOT - Logging Initialized")
+    logger.info("=" * 80)
+    logger.info(f"Log Level: {level}")
+    logger.info(f"Log File: {log_file}")
+    logger.info(f"Error Log: {error_log_file}")
+    logger.info(f"Max Size: {max_bytes / 1024 / 1024:.1f} MB")
+    logger.info(f"Backup Count: {backup_count}")
+    logger.info(f"Console Output: {console_output}")
+    logger.info("=" * 80)
     
-    if memory:
-        info['memory'] = {
-            'total': f"{memory.total / 1024**3:.1f} GB",
-            'used': f"{memory.used / 1024**3:.1f} GB",
-            'percent': memory.percent
-        }
-    
-    return info
+    return logger
 
 
-def format_bytes(bytes_val: int) -> str:
-    """Format bytes to human readable"""
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if bytes_val < 1024:
-            return f"{bytes_val:.1f} {unit}"
-        bytes_val /= 1024
-    return f"{bytes_val:.1f} TB"
+# ============================================
+# Additional Logging Utilities
+# ============================================
 
-
-class Timer:
-    """Simple timing context manager"""
+class PerformanceLogger:
+    """Context manager for logging performance metrics"""
     
-    def __init__(self, name: str = "Operation"):
-        self.name = name
+    def __init__(self, operation_name: str, logger: logging.Logger = None):
+        self.operation_name = operation_name
+        self.logger = logger or logging.getLogger('HeySpiderRobot')
         self.start_time = None
-        self.elapsed = 0
-    
+        
     def __enter__(self):
         self.start_time = time.time()
+        self.logger.debug(f"Starting: {self.operation_name}")
         return self
-    
-    def __exit__(self, *args):
-        self.elapsed = time.time() - self.start_time
-        print(f"Timer {self.name}: {self.elapsed:.3f}s")
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        duration = time.time() - self.start_time
+        
+        if exc_type is None:
+            self.logger.debug(
+                f"Completed: {self.operation_name} "
+                f"in {duration:.3f}s"
+            )
+        else:
+            self.logger.error(
+                f"Failed: {self.operation_name} "
+                f"after {duration:.3f}s - {exc_val}"
+            )
+        
+        return False  # Don't suppress exceptions
 
 
-class PerformanceMonitor:
-    """Monitor performance metrics"""
-    
-    def __init__(self, window_size: int = 100):
-        self.window_size = window_size
-        self.metrics = {}
-    
-    def record(self, metric_name: str, value: float):
-        """Record a metric value"""
-        if metric_name not in self.metrics:
-            self.metrics[metric_name] = []
-        
-        self.metrics[metric_name].append(value)
-        
-        if len(self.metrics[metric_name]) > self.window_size:
-            self.metrics[metric_name].pop(0)
-    
-    def get_average(self, metric_name: str) -> float:
-        """Get average of metric"""
-        if metric_name not in self.metrics or not self.metrics[metric_name]:
-            return 0.0
-        
-        values = self.metrics[metric_name]
-        return sum(values) / len(values)
-    
-    def get_max(self, metric_name: str) -> float:
-        """Get max of metric"""
-        if metric_name not in self.metrics or not self.metrics[metric_name]:
-            return 0.0
-        
-        return max(self.metrics[metric_name])
-    
-    def get_min(self, metric_name: str) -> float:
-        """Get min of metric"""
-        if metric_name not in self.metrics or not self.metrics[metric_name]:
-            return 0.0
-        
-        return min(self.metrics[metric_name])
-    
-    def get_stats(self) -> Dict:
-        """Get all statistics"""
-        stats = {}
-        for metric_name in self.metrics.keys():
-            stats[metric_name] = {
-                'avg': self.get_average(metric_name),
-                'max': self.get_max(metric_name),
-                'min': self.get_min(metric_name),
-                'count': len(self.metrics[metric_name])
-            }
-        return stats
+def log_function_call(logger: logging.Logger = None):
+    """Decorator to log function calls"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            nonlocal logger
+            if logger is None:
+                logger = logging.getLogger('HeySpiderRobot')
+            
+            logger.debug(f"Calling: {func.__name__}()")
+            try:
+                result = func(*args, **kwargs)
+                logger.debug(f"Success: {func.__name__}()")
+                return result
+            except Exception as e:
+                logger.error(f"Error in {func.__name__}(): {e}")
+                raise
+        return wrapper
+    return decorator
 
 
-def ensure_directories(*dirs: str):
-    """Ensure directories exist"""
-    for directory in dirs:
-        Path(directory).mkdir(parents=True, exist_ok=True)
+def log_exception(logger: logging.Logger, exc: Exception, context: str = ""):
+    """Log exception with full traceback"""
+    import traceback
+    
+    logger.error(f"Exception occurred: {context}")
+    logger.error(f"Exception type: {type(exc).__name__}")
+    logger.error(f"Exception message: {str(exc)}")
+    logger.error("Traceback:")
+    logger.error(traceback.format_exc())
+
+
+# Example usage in main.py:
+"""
+from src.utils import setup_logging, PerformanceLogger, log_exception
+
+def main():
+    # Setup logging first
+    logger = setup_logging(
+        log_file=settings.get_log_path(),
+        level=settings.LOG_LEVEL,
+        console_output=True
+    )
+    
+    logger.info("Starting Hey Spider Robot...")
+    
+    try:
+        # Use performance logging
+        with PerformanceLogger("Robot Initialization", logger):
+            robot = HeySpiderRobot()
+        
+        # Start robot
+        robot.start()
+        
+    except Exception as e:
+        log_exception(logger, e, "Main robot startup")
+        sys.exit(1)
+"""
